@@ -1128,7 +1128,7 @@ Abre `contracts/openapi.yaml` y revisa que cada ruta, parámetro, respuesta y es
 
 ## Paso 7. Habilita CI y releases versionados
 
-El workflow de CI corre pruebas y compila el sample. El de publicación vuelve a validar y publica `android-domain`, `android-data` y `android-sdk` bajo una única versión del SDK. README explica capas, ejecución, API pública, seguridad y la razón de las versiones elegidas. `LibraryCoordinates.VERSION_NAME` centraliza la versión por defecto; al publicar con un tag, el workflow pasa esa versión a los tres artefactos mediante `releaseVersion`.
+El workflow de CI corre pruebas y compila el sample. Al integrar en `main`, el de publicación lee la versión central, valida y publica `android-domain`, `android-data` y `android-sdk` bajo esa versión, y crea un GitHub Release con notas automáticas. Si el tag de esa versión ya existe, omite la publicación duplicada. README explica capas, ejecución, API pública, seguridad y la razón de las versiones elegidas. `LibraryCoordinates.VERSION_NAME` centraliza la versión por defecto; al publicar con un tag, el workflow pasa esa versión a los tres artefactos mediante `releaseVersion`.
 
 ### Archivo .github/workflows/android-ci.yml
 
@@ -1161,17 +1161,43 @@ jobs:
 
 En el proyecto `02-shared-android-sdk`, en la ruta `.github/workflows/publish.yml`, crea el archivo si no existe y pega el siguiente código.
 
-**Explicación:** Publica artefactos versionados después de validar un tag. Usa `android-actions/setup-android@v4` para evitar solicitar el paquete obsoleto `tools`; luego instala explícitamente Android API 36 y Build Tools 36.
+**Explicación:** Al integrar cambios en `main`, lee `VERSION_NAME` de `LibraryCoordinates.kt`, valida que sea `MAJOR.MINOR.PATCH`, comprueba que el tag `vVERSION` no exista, ejecuta validaciones, publica los tres artefactos con esa versión en GitHub Packages y crea el GitHub Release con notas generadas. Si ese tag ya existe, evita republicar una versión duplicada. Usa `android-actions/setup-android@v4`; v3 pedía el paquete retirado `tools`.
 
 ````yaml
 name: Publish Android library
 on:
   push:
-    tags: ['v*']
+    branches: [main]
 permissions:
   contents: read
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_needed: ${{ steps.version.outputs.release_needed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read version and check existing release
+        id: version
+        run: |
+          version=$(sed -nE 's/.*VERSION_NAME = "([^"]+)".*/\1/p' buildSrc/src/main/kotlin/LibraryCoordinates.kt)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release version in LibraryCoordinates.kt: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            echo "Release v$version already exists; skipping duplicate publication."
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   verify:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1186,10 +1212,11 @@ jobs:
       - run: ./gradlew test assembleDebug
 
   publish:
-    needs: verify
+    needs: [prepare, verify]
+    if: needs.prepare.outputs.release_needed == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -1201,11 +1228,17 @@ jobs:
       - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Publish tagged version
-        run: ./gradlew publishAllPublicationsToGitHubPackagesRepository -PreleaseVersion="${GITHUB_REF_NAME#v}"
+      - name: Publish SDK artifacts to GitHub Packages
+        run: ./gradlew publishAllPublicationsToGitHubPackagesRepository -PreleaseVersion="${{ needs.prepare.outputs.version }}"
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
 ````
 
 ### Archivo .gitignore
@@ -1283,7 +1316,7 @@ Version references checked on 2026-11-01:
 
 ## Publication
 
-This repository's tag workflow checks tests and builds before publishing the `android-sdk`, `android-data`, and `android-domain` artifacts. Grant the Events and Explore repositories read access to its GitHub Package. Never store package tokens in the repository.
+Al integrar cambios en `main`, el workflow comprueba tests y build, publica `android-sdk`, `android-data` y `android-domain` en GitHub Packages con la versión de `LibraryCoordinates.kt` y crea el GitHub Release correspondiente. Concede acceso de lectura al paquete a Events y Explore; nunca guardes tokens en el repositorio.
 ````
 
 **Al completar este paso, ejecuta desde la raíz de `02-shared-android-sdk`:**
@@ -1307,7 +1340,7 @@ La pantalla muestra carga, error o lista de productos. El flujo es Activity → 
 1. Desde este proyecto ejecuta `./gradlew publishToMavenLocal`.
 2. En Events y Explore cambia la versión de `sharedSdk` a `0.2.0` (o al valor que publiques).
 3. Desde cada app ejecuta `./gradlew test assembleDebug`.
-4. La versión predeterminada local está en `buildSrc/src/main/kotlin/LibraryCoordinates.kt`. Para GitHub Packages, publica este repo con un tag nuevo: `git tag v0.2.0 && git push origin v0.2.0`. El workflow toma `0.2.0` del tag y publica los tres artefactos con esa misma versión; no hace falta editar los tres `build.gradle.kts`.
+4. Para GitHub Packages y el GitHub Release, cambia `VERSION_NAME` en `buildSrc/src/main/kotlin/LibraryCoordinates.kt`, integra ese cambio en `main` y deja que el workflow publique los tres artefactos y cree el release `vVERSION_NAME`. Incrementa `VERSION_NAME` antes de la siguiente publicación; si el tag ya existe, el workflow omite la duplicada.
 5. Concede acceso `Read` al paquete para los repos Events y Explore. Mantén tokens locales en `~/.gradle/gradle.properties`; nunca en Git.
 
 ## Dependencias: por qué estaban antiguas y qué cambió
