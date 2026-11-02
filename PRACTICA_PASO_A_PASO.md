@@ -108,6 +108,42 @@ lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime-ktx", versi
 junit = { module = "junit:junit", version = "4.13.2" }
 ````
 
+### Archivos buildSrc para coordenadas y versión del SDK
+
+En el proyecto `02-shared-android-sdk`, crea primero `buildSrc/build.gradle.kts` y luego `buildSrc/src/main/kotlin/LibraryCoordinates.kt`. `buildSrc` es código de build compartido automáticamente por todos los scripts de Gradle de este repositorio. Así el group, los nombres de los tres artefactos y la versión local por defecto se mantienen en un solo lugar.
+
+**Archivo `buildSrc/build.gradle.kts`**
+
+````kotlin
+plugins {
+    `kotlin-dsl`
+}
+
+repositories {
+    gradlePluginPortal()
+    mavenCentral()
+}
+````
+
+**Archivo `buildSrc/src/main/kotlin/LibraryCoordinates.kt`**
+
+````kotlin
+package com.redbull.lab.build
+
+/** Coordinates shared by every published artifact in this SDK repository. */
+object LibraryCoordinates {
+    const val GROUP_ID = "com.redbull.lab"
+    const val ANDROID_SDK_ARTIFACT_ID = "android-sdk"
+    const val ANDROID_DATA_ARTIFACT_ID = "android-data"
+    const val ANDROID_DOMAIN_ARTIFACT_ID = "android-domain"
+
+    /** Local and Maven Local default; CI may override it with -PreleaseVersion. */
+    const val VERSION_NAME = "0.2.0"
+}
+````
+
+Para una nueva versión local cambia solamente `VERSION_NAME`. Los scripts de publicación de `domain`, `data` y `sdk` usan ese default; si Gradle recibe `-PreleaseVersion=...`, ese valor tiene precedencia. El workflow de GitHub deriva ese parámetro del tag `vX.Y.Z`, de modo que los tres artefactos reciben exactamente la misma versión del tag.
+
 ### Archivo domain/build.gradle.kts
 
 En el proyecto `02-shared-android-sdk`, en la ruta `domain/build.gradle.kts`, crea el archivo si no existe y pega el siguiente código.
@@ -115,6 +151,8 @@ En el proyecto `02-shared-android-sdk`, en la ruta `domain/build.gradle.kts`, cr
 **Explicación:** Configura domain como biblioteca Kotlin/JVM pura y publica su JAR.
 
 ````kotlin
+import com.redbull.lab.build.LibraryCoordinates
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.maven.publish)
@@ -133,9 +171,9 @@ publishing {
     publications {
         create<MavenPublication>("release") {
             from(components["java"])
-            groupId = "com.redbull.lab"
-            artifactId = "android-domain"
-            version = providers.gradleProperty("releaseVersion").getOrElse("0.2.0")
+            groupId = LibraryCoordinates.GROUP_ID
+            artifactId = LibraryCoordinates.ANDROID_DOMAIN_ARTIFACT_ID
+            version = providers.gradleProperty("releaseVersion").orElse(LibraryCoordinates.VERSION_NAME).get()
         }
     }
     repositories {
@@ -158,6 +196,8 @@ En el proyecto `02-shared-android-sdk`, en la ruta `data/build.gradle.kts`, crea
 **Explicación:** Configura Android data y sus dependencias Retrofit/Moshi y contrato domain.
 
 ````kotlin
+import com.redbull.lab.build.LibraryCoordinates
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -193,9 +233,9 @@ dependencies {
 publishing {
     publications {
         create<MavenPublication>("release") {
-            groupId = "com.redbull.lab"
-            artifactId = "android-data"
-            version = providers.gradleProperty("releaseVersion").getOrElse("0.2.0")
+            groupId = LibraryCoordinates.GROUP_ID
+            artifactId = LibraryCoordinates.ANDROID_DATA_ARTIFACT_ID
+            version = providers.gradleProperty("releaseVersion").orElse(LibraryCoordinates.VERSION_NAME).get()
         }
     }
     repositories {
@@ -224,6 +264,8 @@ En el proyecto `02-shared-android-sdk`, en la ruta `sdk/build.gradle.kts`, crea 
 **Explicación:** Configura el AAR de la fachada pública y sus módulos internos.
 
 ````kotlin
+import com.redbull.lab.build.LibraryCoordinates
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -255,9 +297,9 @@ dependencies {
 publishing {
     publications {
         create<MavenPublication>("release") {
-            groupId = "com.redbull.lab"
-            artifactId = "android-sdk"
-            version = providers.gradleProperty("releaseVersion").getOrElse("0.2.0")
+            groupId = LibraryCoordinates.GROUP_ID
+            artifactId = LibraryCoordinates.ANDROID_SDK_ARTIFACT_ID
+            version = providers.gradleProperty("releaseVersion").orElse(LibraryCoordinates.VERSION_NAME).get()
         }
     }
     repositories {
@@ -1086,13 +1128,13 @@ Abre `contracts/openapi.yaml` y revisa que cada ruta, parámetro, respuesta y es
 
 ## Paso 7. Habilita CI y releases versionados
 
-El workflow de CI corre pruebas y compila el sample. El de publicación vuelve a validar y publica `android-domain`, `android-data` y `android-sdk` bajo una única versión del SDK. README explica capas, ejecución, API pública, seguridad y la razón de las versiones elegidas.
+El workflow de CI corre pruebas y compila el sample. El de publicación vuelve a validar y publica `android-domain`, `android-data` y `android-sdk` bajo una única versión del SDK. README explica capas, ejecución, API pública, seguridad y la razón de las versiones elegidas. `LibraryCoordinates.VERSION_NAME` centraliza la versión por defecto; al publicar con un tag, el workflow pasa esa versión a los tres artefactos mediante `releaseVersion`.
 
 ### Archivo .github/workflows/android-ci.yml
 
 En el proyecto `02-shared-android-sdk`, en la ruta `.github/workflows/android-ci.yml`, crea el archivo si no existe y pega el siguiente código.
 
-**Explicación:** Valida el SDK y compila el sample en push y pull request.
+**Explicación:** Valida el SDK y compila el sample en push y pull request. Usa `android-actions/setup-android@v4`: la versión v3 pedía por defecto el paquete SDK `tools`, que Google retiró; v4 ya no lo solicita. Luego se instalan explícitamente Android API 36 y Build Tools 36.
 
 ````yaml
 name: Android CI
@@ -1108,7 +1150,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
@@ -1119,7 +1161,7 @@ jobs:
 
 En el proyecto `02-shared-android-sdk`, en la ruta `.github/workflows/publish.yml`, crea el archivo si no existe y pega el siguiente código.
 
-**Explicación:** Publica artefactos versionados después de validar un tag.
+**Explicación:** Publica artefactos versionados después de validar un tag. Usa `android-actions/setup-android@v4` para evitar solicitar el paquete obsoleto `tools`; luego instala explícitamente Android API 36 y Build Tools 36.
 
 ````yaml
 name: Publish Android library
@@ -1137,7 +1179,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
@@ -1155,7 +1197,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
@@ -1265,7 +1307,7 @@ La pantalla muestra carga, error o lista de productos. El flujo es Activity → 
 1. Desde este proyecto ejecuta `./gradlew publishToMavenLocal`.
 2. En Events y Explore cambia la versión de `sharedSdk` a `0.2.0` (o al valor que publiques).
 3. Desde cada app ejecuta `./gradlew test assembleDebug`.
-4. Para GitHub Packages, publica este repo con un tag nuevo: `git tag v0.2.0 && git push origin v0.2.0`. El workflow valida y publica los tres artefactos.
+4. La versión predeterminada local está en `buildSrc/src/main/kotlin/LibraryCoordinates.kt`. Para GitHub Packages, publica este repo con un tag nuevo: `git tag v0.2.0 && git push origin v0.2.0`. El workflow toma `0.2.0` del tag y publica los tres artefactos con esa misma versión; no hace falta editar los tres `build.gradle.kts`.
 5. Concede acceso `Read` al paquete para los repos Events y Explore. Mantén tokens locales en `~/.gradle/gradle.properties`; nunca en Git.
 
 ## Dependencias: por qué estaban antiguas y qué cambió

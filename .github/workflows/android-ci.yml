@@ -11,8 +11,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android API 35
+      - uses: android-actions/setup-android@v4
+        # v3 requests the retired SDK package "tools" by default; v4 no longer does.
+      - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew test assembleDebug

@@ -29,7 +29,7 @@ Requires JDK 17 and Android SDK Platform 36. From this repo root:
 
 The sample app launches and fetches products from DummyJSON. It needs network access, but no API key.
 
-The published consumer coordinate remains `com.redbull.lab:android-sdk:<version>`. Publishing this repository also publishes `android-data` and the pure Kotlin `android-domain` at the same version. The API contract proposal is in `contracts/openapi.yaml`.
+The published consumer coordinate remains `com.redbull.lab:android-sdk:<version>`. Publishing this repository also publishes `android-data` and the pure Kotlin `android-domain` at the same version. `buildSrc/src/main/kotlin/LibraryCoordinates.kt` is the single source for the default version and artifact coordinates. Local publication uses `VERSION_NAME`; the tag workflow overrides it with the version in `vX.Y.Z` and applies that same version to all three artifacts. The API contract proposal is in `contracts/openapi.yaml`.
 
 ## Version choices and update rationale
 
@@ -51,4 +51,4 @@ Version references checked on 2026-11-01:
 
 ## Publication
 
-This repository's tag workflow checks tests and builds before publishing the `android-sdk`, `android-data`, and `android-domain` artifacts. Grant the Events and Explore repositories read access to its GitHub Package. Never store package tokens in the repository.
+This repository's tag workflow checks tests and builds before publishing the `android-sdk`, `android-data`, and `android-domain` artifacts. Their shared coordinates and default version are defined in `buildSrc/src/main/kotlin/LibraryCoordinates.kt`; a `vX.Y.Z` tag sets the release version for all three. Grant the Events and Explore repositories read access to its GitHub Package. Never store package tokens in the repository.

@@ -1,3 +1,5 @@
+import com.redbull.lab.build.LibraryCoordinates
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.maven.publish)
@@ -16,9 +18,9 @@ publishing {
     publications {
         create<MavenPublication>("release") {
             from(components["java"])
-            groupId = "com.redbull.lab"
-            artifactId = "android-domain"
-            version = providers.gradleProperty("releaseVersion").getOrElse("0.2.0")
+            groupId = LibraryCoordinates.GROUP_ID
+            artifactId = LibraryCoordinates.ANDROID_DOMAIN_ARTIFACT_ID
+            version = providers.gradleProperty("releaseVersion").orElse(LibraryCoordinates.VERSION_NAME).get()
         }
     }
     repositories {
