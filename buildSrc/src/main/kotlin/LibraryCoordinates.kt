@@ -8,5 +8,5 @@ object LibraryCoordinates {
     const val ANDROID_DOMAIN_ARTIFACT_ID = "android-domain"
 
     /** Local and Maven Local default; CI may override it with -PreleaseVersion. */
-    const val VERSION_NAME = "0.2.1"
+    const val VERSION_NAME = "0.2.2"
 }
